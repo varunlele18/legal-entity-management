@@ -71,10 +71,7 @@ def init_database():
             created_by TEXT,
             created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             modified_by TEXT,
-            modified_date TIMESTAMP,
-            FOREIGN KEY (reporting_group_code) REFERENCES reporting_groups(reporting_group_code),
-            FOREIGN KEY (sector_code) REFERENCES sector_codes(sector_code),
-            FOREIGN KEY (abn) REFERENCES legal_entities(abn)
+            modified_date TIMESTAMP
         )
     """)
     
@@ -200,7 +197,7 @@ page = st.sidebar.radio(
     ["Dashboard", "Legal Entity Hierarchy", "Sector Code Mappings", "Reference Data", "Reports & Analytics"]
 )
 
-# Reset database button (optional)
+# Reset database button
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Reset to Sample Data"):
     import os
@@ -220,7 +217,6 @@ if page == "Dashboard":
     sectors_df = load_data("sector_codes")
     groups_df = load_data("reporting_groups")
     
-    # Key metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -235,7 +231,6 @@ if page == "Dashboard":
     
     st.markdown("---")
     
-    # Quick insights
     col1, col2 = st.columns(2)
     
     with col1:
@@ -255,8 +250,6 @@ if page == "Dashboard":
             )
     
     st.markdown("---")
-    
-    # Recent activity summary
     st.subheader("Alpha Holdings Group Structure Overview")
     st.info("""
     **Parent Entity:** Alpha Holdings Pty Ltd (91000000001)
@@ -277,14 +270,12 @@ elif page == "Legal Entity Hierarchy":
     
     tab1, tab2, tab3 = st.tabs(["View Hierarchy", "Add Entity", "Edit/Delete Entity"])
     
-    # Tab 1: View Hierarchy
     with tab1:
         st.subheader("Current Legal Entity Hierarchy")
         
         entities_df = load_data("legal_entities")
         
         if not entities_df.empty:
-            # Filter options
             col1, col2 = st.columns(2)
             with col1:
                 status_filter = st.multiselect(
@@ -310,33 +301,24 @@ elif page == "Legal Entity Hierarchy":
                 hide_index=True
             )
             
-            # Hierarchy visualization
             st.subheader("📊 Hierarchy Tree View")
             
             def build_tree(parent_abn, level=0):
-                """Recursively build and display hierarchy tree"""
                 children = filtered_df[filtered_df['parent_abn'] == parent_abn].sort_values('entity_name')
-                
                 for idx, child in children.iterrows():
                     indent = "    " * level
                     connector = "└── " if level > 0 else ""
                     type_emoji = "🏛️" if child['entity_type'] == 'Parent' else "🏢" if child['entity_type'] == 'Subsidiary' else "🤝"
                     status_emoji = "✅" if child['status'] == 'Active' else "⏸️"
-                    
                     st.text(f"{indent}{connector}{type_emoji} {child['entity_name']} ({child['abn']}) - {child['entity_type']} {status_emoji}")
-                    
-                    # Recurse for children
                     build_tree(child['abn'], level + 1)
             
-            # Display tree starting from root entities
             parent_entities = filtered_df[filtered_df['parent_abn'].isna()]
             for _, parent in parent_entities.iterrows():
                 build_tree(None, 0)
-                
         else:
-            st.info("No legal entities found. Add your first entity in the 'Add Entity' tab.")
+            st.info("No legal entities found.")
     
-    # Tab 2: Add Entity
     with tab2:
         st.subheader("Add New Legal Entity")
         
@@ -344,12 +326,9 @@ elif page == "Legal Entity Hierarchy":
             col1, col2 = st.columns(2)
             
             with col1:
-                new_abn = st.text_input("ABN *", max_chars=11, help="11-digit ABN")
+                new_abn = st.text_input("ABN *", max_chars=11)
                 new_entity_name = st.text_input("Entity Name *")
-                new_entity_type = st.selectbox(
-                    "Entity Type *",
-                    ["Parent", "Subsidiary", "JV", "Branch", "Other"]
-                )
+                new_entity_type = st.selectbox("Entity Type *", ["Parent", "Subsidiary", "JV", "Branch", "Other"])
             
             with col2:
                 entities_df = load_data("legal_entities")
@@ -366,7 +345,6 @@ elif page == "Legal Entity Hierarchy":
                 elif not new_entity_name:
                     st.error("Please enter an entity name")
                 else:
-                    # Check if ABN already exists
                     if not entities_df.empty and new_abn in entities_df['abn'].values:
                         st.error(f"ABN {new_abn} already exists!")
                     else:
@@ -375,21 +353,13 @@ elif page == "Legal Entity Hierarchy":
                             (abn, entity_name, parent_abn, entity_type, status, effective_date, created_by)
                             VALUES (?, ?, ?, ?, ?, ?, ?)
                         """
-                        params = (
-                            new_abn,
-                            new_entity_name,
-                            None if new_parent_abn == "None" else new_parent_abn,
-                            new_entity_type,
-                            new_status,
-                            new_effective_date,
-                            'streamlit_user'
-                        )
+                        params = (new_abn, new_entity_name, None if new_parent_abn == "None" else new_parent_abn,
+                                new_entity_type, new_status, new_effective_date, 'streamlit_user')
                         
                         if execute_query(query, params):
                             st.success(f"✅ Successfully added entity: {new_entity_name} ({new_abn})")
                             st.rerun()
     
-    # Tab 3: Edit/Delete Entity
     with tab3:
         st.subheader("Edit or Delete Legal Entity")
         
@@ -397,7 +367,7 @@ elif page == "Legal Entity Hierarchy":
         
         if not entities_df.empty:
             selected_abn = st.selectbox(
-                "Select Entity to Edit/Delete",
+                "Select Entity",
                 entities_df['abn'].tolist(),
                 format_func=lambda x: f"{entities_df[entities_df['abn']==x]['entity_name'].values[0]} ({x})"
             )
@@ -441,14 +411,13 @@ elif page == "Legal Entity Hierarchy":
                 with col2:
                     st.write("")
                     st.write("")
-                    if st.button("🗑️ Delete Entity", type="secondary", use_container_width=True):
-                        # Check if entity has children
+                    if st.button("🗑️ Delete", type="secondary", use_container_width=True):
                         children = entities_df[entities_df['parent_abn'] == selected_abn]
                         if not children.empty:
-                            st.error("❌ Cannot delete entity with child entities!")
+                            st.error("❌ Cannot delete entity with children!")
                         else:
                             if delete_record("legal_entities", "abn", selected_abn):
-                                st.success("✅ Entity deleted successfully!")
+                                st.success("✅ Deleted successfully!")
                                 st.rerun()
 
 # ============================================================================
@@ -462,20 +431,12 @@ elif page == "Sector Code Mappings":
     with tab1:
         st.subheader("Current Sector Code Mappings")
         
-        # Load and join data
         conn = sqlite3.connect(DB_FILE)
         query = """
             SELECT 
-                m.mapping_id,
-                m.reporting_group_code,
-                g.reporting_group_name,
-                m.sector_code,
-                s.sector_name,
-                m.abn,
-                e.entity_name,
-                m.effective_date,
-                m.end_date,
-                m.is_active
+                m.mapping_id, m.reporting_group_code, g.reporting_group_name,
+                m.sector_code, s.sector_name, m.abn, e.entity_name,
+                m.effective_date, m.end_date, m.is_active
             FROM sector_abn_mapping m
             LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
             LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
@@ -486,7 +447,6 @@ elif page == "Sector Code Mappings":
         conn.close()
         
         if not mappings_df.empty:
-            # Filters
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -520,7 +480,6 @@ elif page == "Sector Code Mappings":
                 hide_index=True
             )
             
-            # Summary stats
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -528,7 +487,7 @@ elif page == "Sector Code Mappings":
             with col2:
                 st.metric("Active Mappings", len(filtered[filtered['is_active'] == 1]))
             with col3:
-                st.metric("Unique Entities Mapped", filtered['abn'].nunique())
+                st.metric("Unique Entities", filtered['abn'].nunique())
         else:
             st.info("No mappings found.")
     
@@ -581,7 +540,7 @@ elif page == "Sector Code Mappings":
                         st.success("✅ Mapping added successfully!")
                         st.rerun()
         else:
-            st.warning("⚠️ Please ensure Reporting Groups, Sector Codes, and Legal Entities are configured in Reference Data.")
+            st.warning("⚠️ Please configure Reference Data first.")
     
     with tab3:
         st.subheader("Edit or Delete Mapping")
@@ -589,16 +548,8 @@ elif page == "Sector Code Mappings":
         conn = sqlite3.connect(DB_FILE)
         query = """
             SELECT 
-                m.mapping_id,
-                m.reporting_group_code,
-                g.reporting_group_name,
-                m.sector_code,
-                s.sector_name,
-                m.abn,
-                e.entity_name,
-                m.effective_date,
-                m.end_date,
-                m.is_active
+                m.mapping_id, g.reporting_group_name, s.sector_name, e.entity_name,
+                m.effective_date, m.end_date, m.is_active
             FROM sector_abn_mapping m
             LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
             LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
@@ -609,7 +560,7 @@ elif page == "Sector Code Mappings":
         
         if not mappings_df.empty:
             selected_mapping = st.selectbox(
-                "Select Mapping to Edit/Delete",
+                "Select Mapping",
                 mappings_df['mapping_id'].tolist(),
                 format_func=lambda x: f"{mappings_df[mappings_df['mapping_id']==x]['reporting_group_name'].values[0]} | {mappings_df[mappings_df['mapping_id']==x]['sector_name'].values[0]} → {mappings_df[mappings_df['mapping_id']==x]['entity_name'].values[0]}"
             )
@@ -621,7 +572,7 @@ elif page == "Sector Code Mappings":
                 
                 with col1:
                     with st.form("edit_mapping_form"):
-                        st.write("**Edit Mapping Details**")
+                        st.write("**Edit Mapping**")
                         
                         edit_active = st.checkbox("Active", value=bool(mapping_data['is_active']))
                         edit_end_date = st.date_input(
@@ -629,7 +580,7 @@ elif page == "Sector Code Mappings":
                             value=pd.to_datetime(mapping_data['end_date']).date() if pd.notna(mapping_data['end_date']) else None
                         )
                         
-                        update_submitted = st.form_submit_button("Update Mapping")
+                        update_submitted = st.form_submit_button("Update")
                         
                         if update_submitted:
                             query = """
@@ -640,15 +591,15 @@ elif page == "Sector Code Mappings":
                             params = (1 if edit_active else 0, edit_end_date, 'streamlit_user', datetime.now(), selected_mapping)
                             
                             if execute_query(query, params):
-                                st.success("✅ Mapping updated successfully!")
+                                st.success("✅ Updated successfully!")
                                 st.rerun()
                 
                 with col2:
                     st.write("")
                     st.write("")
-                    if st.button("🗑️ Delete Mapping", type="secondary", use_container_width=True):
+                    if st.button("🗑️ Delete", type="secondary", use_container_width=True):
                         if delete_record("sector_abn_mapping", "mapping_id", selected_mapping):
-                            st.success("✅ Mapping deleted successfully!")
+                            st.success("✅ Deleted!")
                             st.rerun()
 
 # ============================================================================
@@ -676,19 +627,19 @@ elif page == "Reference Data":
         
         with col2:
             with st.form("add_reporting_group"):
-                st.write("**Add New Reporting Group**")
-                new_code = st.text_input("Group Code", max_chars=20)
-                new_name = st.text_input("Group Name")
+                st.write("**Add New**")
+                new_code = st.text_input("Code", max_chars=20)
+                new_name = st.text_input("Name")
                 new_desc = st.text_area("Description")
                 
                 if st.form_submit_button("Add"):
                     if new_code and new_name:
                         query = "INSERT INTO reporting_groups (reporting_group_code, reporting_group_name, description) VALUES (?, ?, ?)"
                         if execute_query(query, (new_code, new_name, new_desc)):
-                            st.success("✅ Reporting Group added!")
+                            st.success("✅ Added!")
                             st.rerun()
                     else:
-                        st.error("Please fill required fields")
+                        st.error("Fill required fields")
     
     with tab2:
         st.subheader("Sector Codes")
@@ -707,30 +658,29 @@ elif page == "Reference Data":
         
         with col2:
             with st.form("add_sector_code"):
-                st.write("**Add New Sector Code**")
-                new_code = st.text_input("Sector Code", max_chars=10)
-                new_name = st.text_input("Sector Name")
-                new_desc = st.text_input("Sector Description")
-
+                st.write("**Add New**")
+                new_code = st.text_input("Code", max_chars=10)
+                new_name = st.text_input("Name")
+                new_desc = st.text_area("Description")
+                
                 if st.form_submit_button("Add"):
-                if new_code and new_name:
-                    query = "INSERT INTO sector_codes (sector_code, sector_name, sector_description) VALUES (?, ?, ?)"
-                    if execute_query(query, (new_code, new_name, new_desc)):
-                        st.success("✅ Sector Code added!")
-                        st.rerun()
-                else:
-                    st.error("Please fill required fields")
+                    if new_code and new_name:
+                        query = "INSERT INTO sector_codes (sector_code, sector_name, sector_description) VALUES (?, ?, ?)"
+                        if execute_query(query, (new_code, new_name, new_desc)):
+                            st.success("✅ Added!")
+                            st.rerun()
+                    else:
+                        st.error("Fill required fields")
 
 # ============================================================================
 # PAGE 4: REPORTS & ANALYTICS
 # ============================================================================
 elif page == "Reports & Analytics":
     st.header("Reports & Analytics")
-
+    
     entities_df = load_data("legal_entities")
-
+    
     if not entities_df.empty:
-        # Key metrics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -738,10 +688,9 @@ elif page == "Reports & Analytics":
         with col2:
             st.metric("Active Entities", len(entities_df[entities_df['status'] == 'Active']))
         with col3:
-            parent_count = len(entities_df[entities_df['parent_abn'].isna()])
-            st.metric("Parent Entities", parent_count)
+            st.metric("Parent Entities", len(entities_df[entities_df['parent_abn'].isna()]))
         with col4:
-            jv_count = len(entities_df[entities_df['entity_type'] == 'JV'])
+            st.metric("Joint Ventures", len(entities_df[entities_df['entity_type'] == 'JV']))
             st.metric("Joint Ventures", jv_count)
         
         st.markdown("---")
@@ -959,3 +908,4 @@ elif page == "Reports & Analytics":
 # Footer
 st.markdown("---")
 st.caption("Legal Entity & Sector Management System | Built with Streamlit")
+
