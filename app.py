@@ -260,55 +260,261 @@ if page == "Legal Entity Hierarchy":
             st.markdown("---")
             st.subheader("📊 Complete Hierarchy Tree View")
             
-            def build_tree(parent_abn, entities, prefix=""):
-                """Recursively build and display hierarchy tree with proper branching"""
-                children = entities[entities['parent_abn'] == parent_abn].sort_values('entity_name')
-                num_children = len(children)
+            # Visualization type selector
+            viz_type = st.radio("Select Visualization Type", ["Interactive Tree Diagram", "Text Tree"], horizontal=True)
+            
+            if viz_type == "Interactive Tree Diagram":
+                # Build HTML tree structure
+                def build_html_tree(parent_abn, entities, level=0):
+                    """Recursively build HTML tree structure"""
+                    children = entities[entities['parent_abn'] == parent_abn].sort_values('entity_name')
+                    
+                    if children.empty:
+                        return ""
+                    
+                    html = "<ul>"
+                    for idx, child in children.iterrows():
+                        # Entity type styling
+                        if child['entity_type'] == 'Parent':
+                            node_class = "parent-node"
+                            type_emoji = "🏛️"
+                        elif child['entity_type'] == 'Subsidiary':
+                            node_class = "subsidiary-node"
+                            type_emoji = "🏢"
+                        elif child['entity_type'] == 'JV':
+                            node_class = "jv-node"
+                            type_emoji = "🤝"
+                        else:
+                            node_class = "other-node"
+                            type_emoji = "📋"
+                        
+                        status_badge = "active" if child['status'] == 'Active' else "inactive"
+                        
+                        html += f"""
+                        <li>
+                            <div class="tree-node {node_class}">
+                                <span class="node-emoji">{type_emoji}</span>
+                                <div class="node-content">
+                                    <div class="node-name">{child['entity_name']}</div>
+                                    <div class="node-details">
+                                        <span class="node-abn">ABN: {child['abn']}</span>
+                                        <span class="node-type">{child['entity_type']}</span>
+                                        <span class="status-badge {status_badge}">{child['status']}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {build_html_tree(child['abn'], entities, level + 1)}
+                        </li>
+                        """
+                    html += "</ul>"
+                    return html
                 
-                for idx, (child_idx, child) in enumerate(children.iterrows()):
-                    is_last = (idx == num_children - 1)
+                # Find root entities
+                root_entities = filtered_df[filtered_df['parent_abn'].isna()]
+                
+                if not root_entities.empty:
+                    tree_html = """
+                    <style>
+                        .tree-container {
+                            font-family: Arial, sans-serif;
+                            padding: 20px;
+                            background: #f8f9fa;
+                            border-radius: 8px;
+                            overflow-x: auto;
+                        }
+                        .tree-container ul {
+                            list-style: none;
+                            position: relative;
+                            padding: 10px 0 10px 30px;
+                            margin: 0;
+                        }
+                        .tree-container ul:before {
+                            content: "";
+                            position: absolute;
+                            top: 0;
+                            left: 15px;
+                            border-left: 2px solid #ccc;
+                            height: 100%;
+                        }
+                        .tree-container > ul:before {
+                            border: none;
+                        }
+                        .tree-container li {
+                            position: relative;
+                            padding: 10px 0;
+                        }
+                        .tree-container li:before {
+                            content: "";
+                            position: absolute;
+                            top: 20px;
+                            left: -15px;
+                            border-top: 2px solid #ccc;
+                            width: 15px;
+                        }
+                        .tree-container li:last-child:before {
+                            background: #f8f9fa;
+                            height: auto;
+                            top: 20px;
+                            bottom: 0;
+                        }
+                        .tree-node {
+                            display: inline-flex;
+                            align-items: center;
+                            padding: 12px 16px;
+                            border-radius: 8px;
+                            background: white;
+                            border: 2px solid #e0e0e0;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                            transition: all 0.3s ease;
+                            cursor: pointer;
+                        }
+                        .tree-node:hover {
+                            transform: translateY(-2px);
+                            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                        }
+                        .parent-node {
+                            border-color: #4a90e2;
+                            background: #e3f2fd;
+                        }
+                        .subsidiary-node {
+                            border-color: #7cb342;
+                            background: #f1f8e9;
+                        }
+                        .jv-node {
+                            border-color: #ffa726;
+                            background: #fff3e0;
+                        }
+                        .other-node {
+                            border-color: #78909c;
+                            background: #eceff1;
+                        }
+                        .node-emoji {
+                            font-size: 24px;
+                            margin-right: 12px;
+                        }
+                        .node-content {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 4px;
+                        }
+                        .node-name {
+                            font-weight: 600;
+                            font-size: 14px;
+                            color: #333;
+                        }
+                        .node-details {
+                            display: flex;
+                            gap: 8px;
+                            font-size: 12px;
+                            color: #666;
+                            flex-wrap: wrap;
+                        }
+                        .node-abn {
+                            font-family: monospace;
+                            background: #f5f5f5;
+                            padding: 2px 6px;
+                            border-radius: 4px;
+                        }
+                        .node-type {
+                            background: #e0e0e0;
+                            padding: 2px 8px;
+                            border-radius: 4px;
+                            font-weight: 500;
+                        }
+                        .status-badge {
+                            padding: 2px 8px;
+                            border-radius: 4px;
+                            font-weight: 500;
+                            text-transform: uppercase;
+                            font-size: 11px;
+                        }
+                        .status-badge.active {
+                            background: #4caf50;
+                            color: white;
+                        }
+                        .status-badge.inactive {
+                            background: #9e9e9e;
+                            color: white;
+                        }
+                    </style>
+                    <div class="tree-container">
+                    """
                     
-                    # Build the tree branch characters
-                    branch = "└── " if is_last else "├── "
+                    for _, root in root_entities.iterrows():
+                        type_emoji = "🏛️" if root['entity_type'] == 'Parent' else "🏢"
+                        status_badge = "active" if root['status'] == 'Active' else "inactive"
+                        node_class = "parent-node" if root['entity_type'] == 'Parent' else "subsidiary-node"
+                        
+                        tree_html += f"""
+                        <ul>
+                            <li>
+                                <div class="tree-node {node_class}">
+                                    <span class="node-emoji">{type_emoji}</span>
+                                    <div class="node-content">
+                                        <div class="node-name">{root['entity_name']}</div>
+                                        <div class="node-details">
+                                            <span class="node-abn">ABN: {root['abn']}</span>
+                                            <span class="node-type">{root['entity_type']}</span>
+                                            <span class="status-badge {status_badge}">{root['status']}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {build_html_tree(root['abn'], filtered_df, level=1)}
+                            </li>
+                        </ul>
+                        """
                     
-                    # Entity type emoji
-                    if child['entity_type'] == 'Parent':
-                        type_emoji = "🏛️"
-                    elif child['entity_type'] == 'Subsidiary':
-                        type_emoji = "🏢"
-                    elif child['entity_type'] == 'JV':
-                        type_emoji = "🤝"
-                    else:
-                        type_emoji = "📋"
+                    tree_html += "</div>"
                     
-                    # Status emoji
-                    status_emoji = "✅" if child['status'] == 'Active' else "⏸️"
-                    
-                    # Display the entity
-                    st.text(f"{prefix}{branch}{type_emoji} {child['entity_name']} ({child['abn']}) - {child['entity_type']} {status_emoji}")
-                    
-                    # Prepare prefix for next level
-                    # If this is the last child, use spaces, otherwise use vertical line
-                    next_prefix = prefix + ("    " if is_last else "│   ")
-                    
-                    # Recurse for children
-                    build_tree(child['abn'], entities, next_prefix)
+                    st.components.v1.html(tree_html, height=800, scrolling=True)
+                else:
+                    st.info("No root entities found.")
             
-            # Find all root entities (those without parents)
-            root_entities = filtered_df[filtered_df['parent_abn'].isna()]
-            
-            if not root_entities.empty:
-                # Display each root and its children
-                for _, root in root_entities.iterrows():
-                    # Display root
-                    type_emoji = "🏛️" if root['entity_type'] == 'Parent' else "🏢"
-                    status_emoji = "✅" if root['status'] == 'Active' else "⏸️"
-                    st.text(f"{type_emoji} {root['entity_name']} ({root['abn']}) - {root['entity_type']} {status_emoji}")
+            else:  # Text Tree
+                def build_tree(parent_abn, entities, prefix=""):
+                    """Recursively build and display hierarchy tree with proper branching"""
+                    children = entities[entities['parent_abn'] == parent_abn].sort_values('entity_name')
+                    num_children = len(children)
                     
-                    # Display all children recursively
-                    build_tree(root['abn'], filtered_df, "")
-            else:
-                st.info("No root entities found. All entities have parents.")
+                    for idx, (child_idx, child) in enumerate(children.iterrows()):
+                        is_last = (idx == num_children - 1)
+                        
+                        # Build the tree branch characters
+                        branch = "└── " if is_last else "├── "
+                        
+                        # Entity type emoji
+                        if child['entity_type'] == 'Parent':
+                            type_emoji = "🏛️"
+                        elif child['entity_type'] == 'Subsidiary':
+                            type_emoji = "🏢"
+                        elif child['entity_type'] == 'JV':
+                            type_emoji = "🤝"
+                        else:
+                            type_emoji = "📋"
+                        
+                        # Status emoji
+                        status_emoji = "✅" if child['status'] == 'Active' else "⏸️"
+                        
+                        # Display the entity
+                        st.text(f"{prefix}{branch}{type_emoji} {child['entity_name']} ({child['abn']}) - {child['entity_type']} {status_emoji}")
+                        
+                        # Prepare prefix for next level
+                        next_prefix = prefix + ("    " if is_last else "│   ")
+                        
+                        # Recurse for children
+                        build_tree(child['abn'], entities, next_prefix)
+                
+                # Find all root entities
+                root_entities = filtered_df[filtered_df['parent_abn'].isna()]
+                
+                if not root_entities.empty:
+                    for _, root in root_entities.iterrows():
+                        type_emoji = "🏛️" if root['entity_type'] == 'Parent' else "🏢"
+                        status_emoji = "✅" if root['status'] == 'Active' else "⏸️"
+                        st.text(f"{type_emoji} {root['entity_name']} ({root['abn']}) - {root['entity_type']} {status_emoji}")
+                        build_tree(root['abn'], filtered_df, "")
+                else:
+                    st.info("No root entities found.")
                 
         else:
             st.info("No legal entities found.")
