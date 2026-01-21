@@ -58,13 +58,14 @@ def init_database():
         )
     """)
     
-    # Sector ABN Mapping table
+    # Sector ABN Mapping table with consolidation percentage
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sector_abn_mapping (
             mapping_id TEXT PRIMARY KEY,
             reporting_group_code TEXT NOT NULL,
             sector_code TEXT NOT NULL,
             abn TEXT NOT NULL,
+            consolidation_percentage REAL DEFAULT 100.0,
             effective_date DATE NOT NULL,
             end_date DATE,
             is_active BOOLEAN DEFAULT 1,
@@ -162,20 +163,20 @@ def insert_sample_data():
             ('91000000011', 'Alpha Tech R&D Pty Ltd', '91000000004', 'Subsidiary', 'Active', '2019-11-05')
         ])
         
-        # Insert sector mappings
+        # Insert sector mappings with random consolidation percentages
         cursor.executemany("""
             INSERT INTO sector_abn_mapping 
-            (mapping_id, reporting_group_code, sector_code, abn, effective_date)
-            VALUES (?, ?, ?, ?, ?)
+            (mapping_id, reporting_group_code, sector_code, abn, consolidation_percentage, effective_date)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, [
-            ('MAP001', 'FIN_INT', 'F1N01', '91000000002', '2020-01-01'),
-            ('MAP002', 'FIN_REG', 'F1N01', '91000000005', '2020-01-01'),
-            ('MAP003', 'FIN_INT', 'T3C02', '91000000004', '2020-01-01'),
-            ('MAP004', 'FIN_REG', 'T3C02', '91000000009', '2020-01-01'),
-            ('MAP005', 'OPS_MIS', 'O9P88', '91000000003', '2020-01-01'),
-            ('MAP006', 'FIN_INT', 'O9P88', '91000000007', '2020-01-01'),
-            ('MAP007', 'FIN_INT', 'R7D55', '91000000011', '2021-01-01'),
-            ('MAP008', 'FIN_REG', 'R7D55', '91000000010', '2021-01-01')
+            ('MAP001', 'FIN_INT', 'F1N01', '91000000002', 100.0, '2020-01-01'),
+            ('MAP002', 'FIN_REG', 'F1N01', '91000000005', 100.0, '2020-01-01'),
+            ('MAP003', 'FIN_INT', 'T3C02', '91000000004', 100.0, '2020-01-01'),
+            ('MAP004', 'FIN_REG', 'T3C02', '91000000009', 100.0, '2020-01-01'),
+            ('MAP005', 'OPS_MIS', 'O9P88', '91000000003', 50.0, '2020-01-01'),
+            ('MAP006', 'FIN_INT', 'O9P88', '91000000007', 75.0, '2020-01-01'),
+            ('MAP007', 'FIN_INT', 'R7D55', '91000000011', 100.0, '2021-01-01'),
+            ('MAP008', 'FIN_REG', 'R7D55', '91000000010', 50.0, '2021-01-01')
         ])
         
         conn.commit()
@@ -194,7 +195,7 @@ st.markdown("---")
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Select Module",
-    ["Dashboard", "Legal Entity Hierarchy", "Sector Code Mappings", "Reference Data", "Reports & Analytics"]
+    ["Legal Entity Hierarchy", "Sector Code Mappings", "Reference Data"]
 )
 
 # Reset database button
@@ -207,65 +208,9 @@ if st.sidebar.button("🔄 Reset to Sample Data"):
     st.rerun()
 
 # ============================================================================
-# PAGE 0: DASHBOARD
-# ============================================================================
-if page == "Dashboard":
-    st.header("📊 System Dashboard")
-    
-    entities_df = load_data("legal_entities")
-    mappings_df = load_data("sector_abn_mapping")
-    sectors_df = load_data("sector_codes")
-    groups_df = load_data("reporting_groups")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Entities", len(entities_df))
-    with col2:
-        active_count = len(entities_df[entities_df['status'] == 'Active'])
-        st.metric("Active Entities", active_count)
-    with col3:
-        st.metric("Sector Mappings", len(mappings_df[mappings_df['is_active'] == 1]))
-    with col4:
-        st.metric("Reporting Groups", len(groups_df[groups_df['is_active'] == 1]))
-    
-    st.markdown("---")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Entity Distribution by Type")
-        if not entities_df.empty:
-            type_dist = entities_df['entity_type'].value_counts().reset_index()
-            type_dist.columns = ['Entity Type', 'Count']
-            st.dataframe(type_dist, use_container_width=True, hide_index=True)
-    
-    with col2:
-        st.subheader("Sector Coverage")
-        if not sectors_df.empty:
-            st.dataframe(
-                sectors_df[['sector_code', 'sector_name']],
-                use_container_width=True,
-                hide_index=True
-            )
-    
-    st.markdown("---")
-    st.subheader("Alpha Holdings Group Structure Overview")
-    st.info("""
-    **Parent Entity:** Alpha Holdings Pty Ltd (91000000001)
-    
-    **Direct Subsidiaries:**
-    - Alpha Finance Pty Ltd (Finance Division)
-    - Alpha Operations JV (Operations Division)
-    - Alpha Technology Pty Ltd (Technology Division)
-    
-    **Total Entities:** 11 legal entities across 4 sectors
-    """)
-
-# ============================================================================
 # PAGE 1: LEGAL ENTITY HIERARCHY
 # ============================================================================
-elif page == "Legal Entity Hierarchy":
+if page == "Legal Entity Hierarchy":
     st.header("Legal Entity Hierarchy Management")
     
     tab1, tab2, tab3 = st.tabs(["View Hierarchy", "Add Entity", "Edit/Delete Entity"])
@@ -301,21 +246,51 @@ elif page == "Legal Entity Hierarchy":
                 hide_index=True
             )
             
-            st.subheader("📊 Hierarchy Tree View")
+            st.markdown("---")
+            st.subheader("📊 Complete Hierarchy Tree View")
             
-            def build_tree(parent_abn, level=0):
-                children = filtered_df[filtered_df['parent_abn'] == parent_abn].sort_values('entity_name')
+            def build_tree(parent_abn, entities, level=0):
+                """Recursively build and display hierarchy tree"""
+                children = entities[entities['parent_abn'] == parent_abn].sort_values('entity_name')
+                
                 for idx, child in children.iterrows():
                     indent = "    " * level
                     connector = "└── " if level > 0 else ""
-                    type_emoji = "🏛️" if child['entity_type'] == 'Parent' else "🏢" if child['entity_type'] == 'Subsidiary' else "🤝"
+                    
+                    # Entity type emoji
+                    if child['entity_type'] == 'Parent':
+                        type_emoji = "🏛️"
+                    elif child['entity_type'] == 'Subsidiary':
+                        type_emoji = "🏢"
+                    elif child['entity_type'] == 'JV':
+                        type_emoji = "🤝"
+                    else:
+                        type_emoji = "📋"
+                    
+                    # Status emoji
                     status_emoji = "✅" if child['status'] == 'Active' else "⏸️"
+                    
                     st.text(f"{indent}{connector}{type_emoji} {child['entity_name']} ({child['abn']}) - {child['entity_type']} {status_emoji}")
-                    build_tree(child['abn'], level + 1)
+                    
+                    # Recurse for children
+                    build_tree(child['abn'], entities, level + 1)
             
-            parent_entities = filtered_df[filtered_df['parent_abn'].isna()]
-            for _, parent in parent_entities.iterrows():
-                build_tree(None, 0)
+            # Find all root entities (those without parents)
+            root_entities = filtered_df[filtered_df['parent_abn'].isna()]
+            
+            if not root_entities.empty:
+                # Display each root and its children
+                for _, root in root_entities.iterrows():
+                    # Display root
+                    type_emoji = "🏛️"
+                    status_emoji = "✅" if root['status'] == 'Active' else "⏸️"
+                    st.text(f"{type_emoji} {root['entity_name']} ({root['abn']}) - {root['entity_type']} {status_emoji}")
+                    
+                    # Display all children recursively
+                    build_tree(root['abn'], filtered_df, level=1)
+            else:
+                st.info("No root entities found. All entities have parents.")
+                
         else:
             st.info("No legal entities found.")
     
@@ -436,7 +411,7 @@ elif page == "Sector Code Mappings":
             SELECT 
                 m.mapping_id, m.reporting_group_code, g.reporting_group_name,
                 m.sector_code, s.sector_name, m.abn, e.entity_name,
-                m.effective_date, m.end_date, m.is_active
+                m.consolidation_percentage, m.effective_date, m.end_date, m.is_active
             FROM sector_abn_mapping m
             LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
             LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
@@ -475,7 +450,7 @@ elif page == "Sector Code Mappings":
                 filtered = filtered[filtered['is_active'] == 1]
             
             st.dataframe(
-                filtered[['reporting_group_name', 'sector_name', 'entity_name', 'abn', 'effective_date', 'is_active']],
+                filtered[['reporting_group_name', 'sector_name', 'entity_name', 'abn', 'consolidation_percentage', 'effective_date', 'is_active']],
                 use_container_width=True,
                 hide_index=True
             )
@@ -514,12 +489,21 @@ elif page == "Sector Code Mappings":
                         sector_codes_df['sector_code'].tolist(),
                         format_func=lambda x: f"{sector_codes_df[sector_codes_df['sector_code']==x]['sector_name'].values[0]} ({x})"
                     )
-                
-                with col2:
+                    
                     mapping_abn = st.selectbox(
                         "ABN *",
                         entities_df['abn'].tolist(),
                         format_func=lambda x: f"{entities_df[entities_df['abn']==x]['entity_name'].values[0]} ({x})"
+                    )
+                
+                with col2:
+                    consolidation_pct = st.number_input(
+                        "Consolidation Percentage *",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=100.0,
+                        step=0.1,
+                        help="Percentage of consolidation (0-100)"
                     )
                     
                     mapping_effective_date = st.date_input("Effective Date", value=date.today())
@@ -531,10 +515,10 @@ elif page == "Sector Code Mappings":
                     
                     query = """
                         INSERT INTO sector_abn_mapping 
-                        (mapping_id, reporting_group_code, sector_code, abn, effective_date, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        (mapping_id, reporting_group_code, sector_code, abn, consolidation_percentage, effective_date, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """
-                    params = (mapping_id, mapping_group, mapping_sector, mapping_abn, mapping_effective_date, 'streamlit_user')
+                    params = (mapping_id, mapping_group, mapping_sector, mapping_abn, consolidation_pct, mapping_effective_date, 'streamlit_user')
                     
                     if execute_query(query, params):
                         st.success("✅ Mapping added successfully!")
@@ -549,7 +533,7 @@ elif page == "Sector Code Mappings":
         query = """
             SELECT 
                 m.mapping_id, g.reporting_group_name, s.sector_name, e.entity_name,
-                m.effective_date, m.end_date, m.is_active
+                m.consolidation_percentage, m.effective_date, m.end_date, m.is_active
             FROM sector_abn_mapping m
             LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
             LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
@@ -562,7 +546,7 @@ elif page == "Sector Code Mappings":
             selected_mapping = st.selectbox(
                 "Select Mapping",
                 mappings_df['mapping_id'].tolist(),
-                format_func=lambda x: f"{mappings_df[mappings_df['mapping_id']==x]['reporting_group_name'].values[0]} | {mappings_df[mappings_df['mapping_id']==x]['sector_name'].values[0]} → {mappings_df[mappings_df['mapping_id']==x]['entity_name'].values[0]}"
+                format_func=lambda x: f"{mappings_df[mappings_df['mapping_id']==x]['reporting_group_name'].values[0]} | {mappings_df[mappings_df['mapping_id']==x]['sector_name'].values[0]} → {mappings_df[mappings_df['mapping_id']==x]['entity_name'].values[0]} ({mappings_df[mappings_df['mapping_id']==x]['consolidation_percentage'].values[0]}%)"
             )
             
             if selected_mapping:
@@ -573,6 +557,14 @@ elif page == "Sector Code Mappings":
                 with col1:
                     with st.form("edit_mapping_form"):
                         st.write("**Edit Mapping**")
+                        
+                        edit_consolidation = st.number_input(
+                            "Consolidation Percentage",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(mapping_data['consolidation_percentage']),
+                            step=0.1
+                        )
                         
                         edit_active = st.checkbox("Active", value=bool(mapping_data['is_active']))
                         edit_end_date = st.date_input(
@@ -585,10 +577,10 @@ elif page == "Sector Code Mappings":
                         if update_submitted:
                             query = """
                                 UPDATE sector_abn_mapping 
-                                SET is_active = ?, end_date = ?, modified_by = ?, modified_date = ?
+                                SET consolidation_percentage = ?, is_active = ?, end_date = ?, modified_by = ?, modified_date = ?
                                 WHERE mapping_id = ?
                             """
-                            params = (1 if edit_active else 0, edit_end_date, 'streamlit_user', datetime.now(), selected_mapping)
+                            params = (edit_consolidation, 1 if edit_active else 0, edit_end_date, 'streamlit_user', datetime.now(), selected_mapping)
                             
                             if execute_query(query, params):
                                 st.success("✅ Updated successfully!")
@@ -672,240 +664,6 @@ elif page == "Reference Data":
                     else:
                         st.error("Fill required fields")
 
-# ============================================================================
-# PAGE 4: REPORTS & ANALYTICS
-# ============================================================================
-elif page == "Reports & Analytics":
-    st.header("Reports & Analytics")
-    
-    entities_df = load_data("legal_entities")
-    
-    if not entities_df.empty:
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Entities", len(entities_df))
-        with col2:
-            st.metric("Active Entities", len(entities_df[entities_df['status'] == 'Active']))
-        with col3:
-            st.metric("Parent Entities", len(entities_df[entities_df['parent_abn'].isna()]))
-        with col4:
-            st.metric("Joint Ventures", len(entities_df[entities_df['entity_type'] == 'JV']))
-            st.metric("Joint Ventures", jv_count)
-        
-        st.markdown("---")
-        
-        # Report Selection
-        report_type = st.selectbox(
-            "Select Report Type",
-            ["Entity Summary", "Hierarchy Breakdown", "Sector Mapping Summary", "Detailed Entity Report"]
-        )
-        
-        if report_type == "Entity Summary":
-            st.subheader("Entity Summary Report")
-            
-            summary = entities_df.groupby(['entity_type', 'status']).size().reset_index(name='count')
-            st.dataframe(summary, use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            st.subheader("Entity Creation Timeline")
-            timeline_df = entities_df.sort_values('effective_date')[['entity_name', 'entity_type', 'effective_date', 'status']]
-            st.dataframe(timeline_df, use_container_width=True, hide_index=True)
-        
-        elif report_type == "Hierarchy Breakdown":
-            st.subheader("Hierarchy Breakdown")
-            
-            hierarchy_data = []
-            for _, entity in entities_df.iterrows():
-                children_count = len(entities_df[entities_df['parent_abn'] == entity['abn']])
-                
-                hierarchy_data.append({
-                    'ABN': entity['abn'],
-                    'Entity Name': entity['entity_name'],
-                    'Type': entity['entity_type'],
-                    'Has Parent': 'Yes' if pd.notna(entity['parent_abn']) else 'No',
-                    'Children Count': children_count,
-                    'Status': entity['status']
-                })
-            
-            hierarchy_df = pd.DataFrame(hierarchy_data)
-            st.dataframe(hierarchy_df, use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            st.subheader("Visual Hierarchy")
-            
-            def display_hierarchy(parent_abn, level=0):
-                children = entities_df[entities_df['parent_abn'] == parent_abn].sort_values('entity_name')
-                for _, child in children.iterrows():
-                    indent = "    " * level
-                    connector = "└── " if level > 0 else ""
-                    st.text(f"{indent}{connector}{child['entity_name']} ({child['abn']}) - {child['entity_type']}")
-                    display_hierarchy(child['abn'], level + 1)
-            
-            root_entities = entities_df[entities_df['parent_abn'].isna()]
-            for _, root in root_entities.iterrows():
-                display_hierarchy(None, 0)
-        
-        elif report_type == "Sector Mapping Summary":
-            st.subheader("Sector Mapping Summary")
-            
-            conn = sqlite3.connect(DB_FILE)
-            query = """
-                SELECT 
-                    g.reporting_group_name,
-                    s.sector_name,
-                    COUNT(m.mapping_id) as mapping_count,
-                    COUNT(DISTINCT m.abn) as unique_entities
-                FROM sector_abn_mapping m
-                LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
-                LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
-                WHERE m.is_active = 1
-                GROUP BY g.reporting_group_name, s.sector_name
-                ORDER BY g.reporting_group_name, s.sector_name
-            """
-            summary_df = pd.read_sql_query(query, conn)
-            conn.close()
-            
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            st.subheader("Detailed Sector Mappings")
-            
-            conn = sqlite3.connect(DB_FILE)
-            detail_query = """
-                SELECT 
-                    g.reporting_group_name as "Reporting Group",
-                    s.sector_name as "Sector",
-                    e.entity_name as "Entity",
-                    e.abn as "ABN",
-                    e.entity_type as "Entity Type",
-                    m.effective_date as "Effective Date"
-                FROM sector_abn_mapping m
-                LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
-                LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
-                LEFT JOIN legal_entities e ON m.abn = e.abn
-                WHERE m.is_active = 1
-                ORDER BY g.reporting_group_name, s.sector_name, e.entity_name
-            """
-            detail_df = pd.read_sql_query(detail_query, conn)
-            conn.close()
-            
-            st.dataframe(detail_df, use_container_width=True, hide_index=True)
-        
-        elif report_type == "Detailed Entity Report":
-            st.subheader("Detailed Entity Report")
-            
-            selected_abn = st.selectbox(
-                "Select Entity",
-                entities_df['abn'].tolist(),
-                format_func=lambda x: f"{entities_df[entities_df['abn']==x]['entity_name'].values[0]} ({x})"
-            )
-            
-            if selected_abn:
-                entity = entities_df[entities_df['abn'] == selected_abn].iloc[0]
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### Basic Information")
-                    st.write(f"**ABN:** {entity['abn']}")
-                    st.write(f"**Name:** {entity['entity_name']}")
-                    st.write(f"**Type:** {entity['entity_type']}")
-                    st.write(f"**Status:** {entity['status']}")
-                    st.write(f"**Effective Date:** {entity['effective_date']}")
-                
-                with col2:
-                    st.markdown("### Hierarchy Information")
-                    if pd.notna(entity['parent_abn']):
-                        parent = entities_df[entities_df['abn'] == entity['parent_abn']].iloc[0]
-                        st.write(f"**Parent Entity:** {parent['entity_name']}")
-                        st.write(f"**Parent ABN:** {parent['abn']}")
-                    else:
-                        st.write("**Parent Entity:** None (Root Entity)")
-                    
-                    children_count = len(entities_df[entities_df['parent_abn'] == selected_abn])
-                    st.write(f"**Child Entities:** {children_count}")
-                
-                st.markdown("---")
-                st.markdown("### Child Entities")
-                children = entities_df[entities_df['parent_abn'] == selected_abn]
-                if not children.empty:
-                    st.dataframe(
-                        children[['abn', 'entity_name', 'entity_type', 'status', 'effective_date']],
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:
-                    st.info("No child entities")
-                
-                st.markdown("---")
-                st.markdown("### Sector Mappings")
-                
-                conn = sqlite3.connect(DB_FILE)
-                mapping_query = """
-                    SELECT 
-                        g.reporting_group_name as "Reporting Group",
-                        s.sector_name as "Sector",
-                        m.effective_date as "Effective Date",
-                        m.is_active as "Active"
-                    FROM sector_abn_mapping m
-                    LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
-                    LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
-                    WHERE m.abn = ?
-                    ORDER BY g.reporting_group_name
-                """
-                mappings = pd.read_sql_query(mapping_query, conn, params=(selected_abn,))
-                conn.close()
-                
-                if not mappings.empty:
-                    st.dataframe(mappings, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No sector mappings for this entity")
-        
-        st.markdown("---")
-        st.subheader("📥 Export Data")
-        
-        export_option = st.selectbox(
-            "Select data to export",
-            ["All Entities", "All Sector Mappings", "Complete Report"]
-        )
-        
-        if st.button("Generate CSV Export"):
-            if export_option == "All Entities":
-                csv = entities_df.to_csv(index=False)
-                st.download_button(
-                    label="Download Entities CSV",
-                    data=csv,
-                    file_name="alpha_holdings_entities.csv",
-                    mime="text/csv"
-                )
-            elif export_option == "All Sector Mappings":
-                conn = sqlite3.connect(DB_FILE)
-                query = """
-                    SELECT 
-                        m.*,
-                        g.reporting_group_name,
-                        s.sector_name,
-                        e.entity_name
-                    FROM sector_abn_mapping m
-                    LEFT JOIN reporting_groups g ON m.reporting_group_code = g.reporting_group_code
-                    LEFT JOIN sector_codes s ON m.sector_code = s.sector_code
-                    LEFT JOIN legal_entities e ON m.abn = e.abn
-                """
-                mappings_df = pd.read_sql_query(query, conn)
-                conn.close()
-                
-                csv = mappings_df.to_csv(index=False)
-                st.download_button(
-                    label="Download Mappings CSV",
-                    data=csv,
-                    file_name="alpha_holdings_sector_mappings.csv",
-                    mime="text/csv"
-                )
-    else:
-        st.info("No data available for reporting.")
-
 # Footer
 st.markdown("---")
-st.caption("Legal Entity & Sector Management System | Built with Streamlit")
-
+st.caption("Legal Entity & Sector Management System | Alpha Holdings Group | Built with Streamlit")
