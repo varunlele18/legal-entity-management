@@ -76,6 +76,17 @@ def init_database():
         )
     """)
     
+    # Migration: Add consolidation_percentage column if it doesn't exist
+    try:
+        cursor.execute("SELECT consolidation_percentage FROM sector_abn_mapping LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        cursor.execute("""
+            ALTER TABLE sector_abn_mapping 
+            ADD COLUMN consolidation_percentage REAL DEFAULT 100.0
+        """)
+        conn.commit()
+    
     conn.commit()
     conn.close()
 
