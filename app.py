@@ -249,13 +249,21 @@ if page == "Legal Entity Hierarchy":
             st.markdown("---")
             st.subheader("📊 Complete Hierarchy Tree View")
             
-            def build_tree(parent_abn, entities, level=0):
-                """Recursively build and display hierarchy tree"""
+            def build_tree(parent_abn, entities, level=0, is_last_sibling=True, prefix=""):
+                """Recursively build and display hierarchy tree with proper branching"""
                 children = entities[entities['parent_abn'] == parent_abn].sort_values('entity_name')
+                num_children = len(children)
                 
-                for idx, child in children.iterrows():
-                    indent = "    " * level
-                    connector = "└── " if level > 0 else ""
+                for idx, (child_idx, child) in enumerate(children.iterrows()):
+                    is_last = (idx == num_children - 1)
+                    
+                    # Build the tree branch characters
+                    if level == 0:
+                        branch = ""
+                        indent = ""
+                    else:
+                        branch = "└── " if is_last else "├── "
+                        indent = prefix
                     
                     # Entity type emoji
                     if child['entity_type'] == 'Parent':
@@ -270,10 +278,17 @@ if page == "Legal Entity Hierarchy":
                     # Status emoji
                     status_emoji = "✅" if child['status'] == 'Active' else "⏸️"
                     
-                    st.text(f"{indent}{connector}{type_emoji} {child['entity_name']} ({child['abn']}) - {child['entity_type']} {status_emoji}")
+                    # Display the entity
+                    st.text(f"{indent}{branch}{type_emoji} {child['entity_name']} ({child['abn']}) - {child['entity_type']} {status_emoji}")
+                    
+                    # Prepare prefix for next level
+                    if level == 0:
+                        next_prefix = ""
+                    else:
+                        next_prefix = prefix + ("    " if is_last else "│   ")
                     
                     # Recurse for children
-                    build_tree(child['abn'], entities, level + 1)
+                    build_tree(child['abn'], entities, level + 1, is_last, next_prefix)
             
             # Find all root entities (those without parents)
             root_entities = filtered_df[filtered_df['parent_abn'].isna()]
@@ -287,7 +302,7 @@ if page == "Legal Entity Hierarchy":
                     st.text(f"{type_emoji} {root['entity_name']} ({root['abn']}) - {root['entity_type']} {status_emoji}")
                     
                     # Display all children recursively
-                    build_tree(root['abn'], filtered_df, level=1)
+                    build_tree(root['abn'], filtered_df, level=1, is_last_sibling=True, prefix="")
             else:
                 st.info("No root entities found. All entities have parents.")
                 
